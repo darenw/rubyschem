@@ -1,0 +1,2627 @@
+%!PS-Adobe-3.0
+%%Title: Electronic Schematic Elements
+%%Creator: Daren Scot Wilson
+%%Pages: 1
+
+
+% General notes:
+%
+% In arguments, the notation (x,y) means two argument, with y on top,
+% that represent a point's location.
+%
+% This file is all hand-written.  The first part is general 
+% electronics, and the last part draws the schematic for
+% the project
+%
+
+
+
+
+% for debugging...
+
+/redmarker 
+{
+	gsave
+	1 setlinewidth
+	1 0 .5 setrgbcolor
+	newpath 8 0 360 arc stroke
+	grestore
+} def
+
+
+/bluemarker 
+{
+	gsave
+	1 setlinewidth
+	0 0 .8 setrgbcolor
+	newpath 8 0 360 arc stroke
+	grestore
+} def
+
+
+
+
+
+
+%------------------------------- SCALING ------------------
+
+
+
+
+% coords: the usual PS units
+
+/inch   { 72.0 mul } def
+
+
+% redefine "inch" as "pinch" = part inch,
+% used to specify sizes of part symbols.
+% change this definition to rescale all the part sizes
+% without messing up the scale of the overall drawing
+%
+/pinch  { 72.0 .6 mul mul } bind def
+
+
+
+
+
+% ------------------- Utility routines ----------------
+
+% CopyXX and CopyYY prepare a copy of the x or the y coords on the stack
+% while preserving the original two points
+% Note:  A vector (x,y) is stored on the stack with y on top
+%
+% Args:
+% 	(x2,y2)
+% 	(x1,y1)
+%
+% Output for CopyXX:  
+% 	x2
+% 	x1
+% 	(x2,y2)
+% 	(x1,y1)
+%
+% Output for CopyYY:  
+% 	y2
+% 	y1
+% 	(x2,y2)
+% 	(x1,y1)
+
+/CopyXX
+	{
+	3 index
+	2 index
+	}
+		bind def
+		
+/CopyYY
+	{
+	2 index
+	1 index
+	}
+		bind def
+
+
+% Compute midpoint, given two points
+%
+% args
+%		(x2,y2)
+%		(x1,y1)
+%
+% output
+%		(xm,ym)
+%
+/MidPoint  
+	{
+	3 -1 roll  add 2 div
+	3 1  roll  add 2 div 
+	exch
+	}
+		bind def
+
+
+% SwapPts exchanges two points
+/SwapPts
+	{
+	4 2 roll
+	}
+		bind def
+
+
+
+
+% Shrink a line segment, reducing both ends by a given distance
+%
+% args:
+% 		D             amount of distance to remove from each end
+%		(x2,y2)       any point P1
+%		(x1,y1)       any other point P1
+%
+% results
+%		true          went ok
+% 		(x2',y2')     modified point P1
+% 		(x1',y1')     modified point P1
+% or
+%		false         original seg was too short
+%
+/ShrinkSeg
+	{
+	/D  exch def
+	/y2 exch def
+	/x2 exch def
+	/y1 exch def
+	/x1 exch def
+	
+	/dx   x2 x1 sub  cvr def
+	/dy   y2 y1 sub  cvr def
+	% renormalize vector to length = D
+	D                                      % length to chop per end
+	dx dx  mul   dy dy  mul  add  sqrt     % given seg's length
+	div
+	% test if seg is so short it'll disappear
+	dup .5 lt
+		{
+		dup 
+		dy mul  /dy exch def      % redef dy as change in end point
+		dx mul  /dx exch def
+
+
+		% Deposit the new end points, nudging coords as we go along
+		x1 dx add
+		y1 dy add
+		x2 dx sub
+		y2 dy sub
+		true
+		}
+		{
+		pop   % remove the shrink proportion, used only in the THEN clause
+		false
+		}
+	ifelse
+	}
+		bind def
+
+
+
+% largest and smallest are like max, min in most languages
+%
+% args:
+%		x1 x2
+%
+% output:
+%		x       - the largest or smallest of the two inputs
+
+/smallest  { 2 copy gt { exch } if pop } def
+/largest   { 2 copy lt { exch } if pop } def
+
+
+
+
+% Make a unit vector basis based on a given direction
+%
+% args:
+% 		(x2,y2)   some point
+% 		(x1,y1)   another point
+%
+% result:
+% 		(Fx,Fy)   a unit vector perp to E
+% 		(Ex,Ey)   a unit vector, aimed from E to F
+%
+/MakeBasis
+	{
+	CopyXX sub  neg  /dx exch def
+	CopyYY sub  neg  /dy exch def
+	pop pop pop pop
+	
+	% Compute normalization constant
+	1.0
+	dx dx mul   dy dy mul add sqrt  
+	div
+	/m exch def
+	
+	% Create basis vectors
+	dx m mul
+	dy m mul
+	dy neg m mul
+	dx m mul	
+	}
+		bind def
+
+
+
+
+
+% Dot draws a solid circle to indicate line connections, etc
+% args:
+%		(x,y)  - location
+%
+/Dot
+	{
+	newpath
+	2.5  0 360 arc   fill	
+	}
+		bind def
+
+
+
+
+% ------------------------ Style Definitions -------------------------
+%
+% Each component has a set of parameters to tweak its size, style
+% Each is named (use)(component)(modifier)
+% where (use) is one of
+% 		W for a width,  for parts with fixed orientation
+% 		Y for a height, for parts with fixed orientation
+% 		L for length along an axis, for parts that may be oriented any way
+% 		W is also for width (crossways from axis) of reorientabls parts
+% 		dY for a vertical spacing
+% 		dX for a horizontal spacing
+% 		R for a radius
+% 		P for a proportion - a pure number, such as a ratio of two widths
+% 		N for a integer number 
+%		F for a feature flag - 0 or 1 to have or omit something
+% 		A for an angle, degrees
+%
+% C programmers, especially those who code for Microsoft Windows,
+% will recognize this as a form of "Hungarian Notation"
+% All values are in the usual Postscript units where 72 = one inch.
+%
+
+% General style
+/FOver  0   def         % how crossed lines jump over
+/WLine  1.45   def         % width of lines in general
+/WLineGaps 6.0 def
+
+/SSign 5.75 def               % width & height of + sign, - sign
+
+
+% Ground Style Params
+/WGnd  0.25 pinch    def    % width of top bar
+/HGnd  0.14 pinch    def
+/NGnd  3          def    % number of horizontal bars, normally 3 or 4
+/PGndBot  0.2 def    % width of bottom bar, as fraction of top bar
+
+
+
+
+/RConnect  .06 inch def
+
+% Arrowhead 
+%  L is size of head along shaf direction, 
+%  W is shaft to tip of wing  (half the head's width)
+/LArrow  .16 pinch  def
+/WArrow  .09 pinch  def
+
+
+% Antenna Style Params
+/WAnt  .33 pinch def
+/HAnt  .38  pinch def
+/LAntStem  0.3 pinch def
+
+
+% Round component (signal source, meter, etc)
+/LRound .25 pinch  def
+
+
+% Resistor Style Params
+/WRes  0.160 pinch  def
+/LRes  0.40  pinch  def
+/NResPeaks  3 def     % number of traingular peaks on each side
+
+
+% Capacitor Style Params
+/WCap  0.250 pinch def
+/LCap  0.08  pinch def
+/RCap  0.50  pinch def
+/PCapBend  1.7  def  % curvature; > 1.0
+/TCap  2.5  def
+/XCapPlus  0.20 pinch def   % position of plus rel to top center
+/YCapPlus 0.15 pinch def
+
+
+% Diode Style Params
+/WDiode 0.270 pinch  def
+/LDiode 0.240 pinch  def
+/TDiodeCath  3.4 def
+
+
+% Battery Style Params
+/WBattery .33 pinch  def
+/WBatteryN  WBattery .44 mul def
+/LBattery  .3 pinch  def
+/TBatteryP  WLine def
+/TBatteryN  WLine 1.6 mul def
+
+
+% Coil Style Params
+/WCoil  0.30 pinch def
+/LCoil  0.57 pinch  def
+/IronSep  .055 pinch  def    % (oops, non-Hungarian) sep. of two lines for Fe core
+
+% Transformer Style Params
+% note: dxTrfGap involves the parameter coilyy which is a bezier control
+% point coordinate.   This does not coincide with the symbol as drawn.
+/dxTrfLegs  .1 pinch def    % how far away from coil before cornering
+/dxTrfGap   .07 pinch def   % approx. distance between coils 
+
+
+
+% Crystal Style Params
+/WCrystal  0.33 pinch def
+/LCrystal  0.27 pinch def
+
+
+% SPST Switch Style Params
+/LSwi  0.33 pinch  def
+/RSwiDot 2.5  def
+/ASwi   25 def
+
+
+
+/FQCircle   true  def      % want circles around transistors?
+/TQCircle  2 def
+/RQCircle  0.34 pinch def
+
+% Bipolar Transistor Style Params
+% default is to draw a circle around it
+/WBip      0.24 pinch  def
+/HBip      0.4 pinch  def
+/TBipBase    3   def
+/LBipBase    .40 pinch  def
+
+
+% FET Transistor Style Params
+/WFet  0.23 pinch  def 
+/HFet  0.37 pinch  def
+/TFetBase    3 def
+/LFetBase    .46 pinch def
+
+% Op Amp Style Params
+/LOp   0.67 pinch  def    % from input side to output apex
+/WOp   0.58 pinch  def    % between ends of input side
+/SOp   0.24 pinch  def    % spacing between + and - inputs
+/TOpLine  2 def          % thickness of line for triangle
+/dXOpSigns .117 pinch def
+
+
+/SLabel     11  def
+/LabelFont  /Times-Roman findfont SLabel scalefont  def
+/dyLabel    10.8 def
+
+
+
+
+
+
+
+%-------------------------------- COMPONENTS -----------------
+
+
+% All components have a subroutine to draw one component,
+% and a Precalc that should be called once before drawing anything.
+%
+% Most parts take one or more positions -these are locations
+% of line endpoints, not the endpoints of the actual symbol.
+% This saves the trouble of having to specify precise endpoints
+% compatible with the part's size.
+% For example, for Gnd, we do not give the point at the center
+% of the top bar, but the point where the ascending vertical 
+% meets a horizontal line or some other component's connect point.
+
+% All components are drawn assuming the caller has started a newpath,
+% and will call stroke when done.  
+% 
+
+
+
+
+% Subroutine to set up a two-terminal part
+%
+% Most parts draw themselves between two given points, including
+% arbitrary length lines to fill the distance between the points
+% not taken up by the part body itself.
+% This subroutine figures out the lengths of these lines,
+% and also prepares the coordinate system so that
+% the part can assume it'll be horizontally oriented,
+% with the symbol endpoints at (0, 0)  and  (LPart, 0),
+% and the current drawing point at (0,0) in that system.
+%
+% When done drawing, be sure to call Part2Finish
+%
+% args:
+% 		L            length of part body
+% 		(x2,y2)      end point
+% 		(x1,y1)      start point
+%
+/Part2Setup
+	{
+	/partlen exch def
+	
+	gsave
+	newpath
+
+	% Find relative position of end connection
+	/deltax  2 index 5 index sub  def
+	/deltay  1 index 4 index sub  def
+	
+	% Change to the part's local coord sys
+	% First, translate to starting connection
+	pop	pop
+	translate
+	% Second, rotate so end connection is along transformed x' axis
+	deltax dup mul  deltay dup mul add sqrt
+	/dist exch def
+	/c deltax dist div def
+	/s deltay dist div def
+	[ c  s  s neg  c   0  0 ]  concat
+
+
+
+	% Now we're using a coord sys in which part appears along x'
+
+	% Draw white fat line to create gaps at line crossovers
+	1 setgray    % for testing, set this to 0.8 
+	0 setlinecap
+	WLineGaps setlinewidth
+	WLineGaps 0 moveto
+	dist WLineGaps sub   0 lineto
+	stroke
+
+
+	% Draw legs in black	
+	0 setgray
+	WLine setlinewidth
+	/leglen   dist partlen sub  2 div  def
+	0    0   moveto   leglen           0  lineto
+	dist 0   moveto   dist leglen sub  0  lineto
+	stroke
+
+	% change coord system origin to one end of the part body
+	leglen 0 translate 
+	0 0 moveto   
+	}
+		bind def
+
+
+
+/Part2Finish
+	{
+	grestore	
+	
+	}
+		bind def
+
+
+% FatWhiteLine is a utility to draw a fat white line
+% between two points
+% Used by InArrow and other parts that don't use Part2Setup
+%
+/FatWhiteLine
+	{
+	
+	% Draw fat white line for crossover gaps
+	4 copy    WLineGaps  
+		{
+		1 setgray    % temp. set to 0.5 for testing of white-gap bars
+		0 setlinecap
+		WLineGaps setlinewidth
+	    moveto   lineto  stroke
+		0 setgray
+		WLine setlinewidth
+		}
+	if
+	}
+		bind def
+		
+
+
+
+
+
+
+% Draw a plus or minus sign.  Size is set by SSign
+%
+% args:
+%		(x,y)    - center point of sign
+%
+/PlusSign
+	{
+	/h  SSign 2 div def
+	exch h sub  exch   moveto
+	SSign  0  rlineto
+	h neg  dup  rmoveto
+	0  SSign  rlineto
+	stroke
+	}
+		bind def
+
+/MinusSign
+	{
+	% draw the minus to be a tad longer than the bars of the + sign
+	moveto
+	SSign -.6 mul  0 rmoveto
+	SSign 1.2 mul  0 rlineto
+	stroke
+	}
+		bind def
+
+
+
+
+
+% Gnd draws a ground symbol
+%
+% Args: 
+%   (x,y)    - position of ground symbol, where it connects to line
+% 	(x,y)    - attach point to circuit
+%    
+%
+% Variables:
+% 	gnddy  - vertical spacing between bars
+
+/GndPrecalc
+	{
+	% computer vertical spacing
+	/gnddy HGnd  NGnd 1 sub  div  neg  def
+
+	% compute reduction of width per bar
+	/gnddw WGnd WGnd PGndBot mul sub  NGnd 1 sub div  neg def
+	}
+		def
+	
+/Gnd 
+	{
+	2 copy     
+	6 2 roll   
+	Line
+	newpath
+	% save negated width into a variable
+	/w WGnd neg def
+	moveto
+	1 1 NGnd
+		{
+		pop  % don't need loop counter
+		w  2 div neg  0  rmoveto
+		w             0  rlineto
+		w  2 div neg  0  rmoveto
+		0  gnddy  rmoveto
+		/w w gnddw sub def
+		} 
+	for
+	stroke
+	} 
+		bind def
+
+
+/PtGnd  % Gnd that takes one point, usualy the end of a line or op amp input
+	{
+	2 copy Gnd
+	}
+		bind def
+
+
+/EarthGnd
+	{
+	2 copy     
+	6 2 roll   
+	Line
+
+
+	newpath
+	
+	moveto
+	WGnd 2 div neg  0  rmoveto   % now at left end of horiz bar
+	currentpoint   /y exch  def   /x exch def
+	/dx WGnd  3 div  def
+	/s  WGnd  -0.18 mul def
+	x  y  moveto   WGnd  0  rlineto
+	x                y  moveto     s  HGnd neg  rlineto
+	x dx       add   y  moveto     s  HGnd neg  rlineto
+	x dx 2 mul add   y  moveto     s  HGnd neg  rlineto
+	x dx 3 mul add   y  moveto     s  HGnd neg  rlineto
+	stroke
+
+	}
+		bind def
+
+
+
+
+% Connect is just a little circle at the end of a line
+% Works like antenna, out arrow, etc.
+%
+% args
+% 		(x,y)  location of connect circle
+%		(x,y)  end of line that attaches to circuit
+%
+		
+/Connect 
+	{
+	4 copy  Line
+	
+	% Draw the circle
+	
+	newpath 
+	WLine setlinewidth
+	0 setgray
+	RConnect  0 360  arc  gsave 1 setgray fill grestore stroke
+	
+	% Waste the final coord - it was already used by Line
+	pop pop
+	}
+		bind def
+
+
+
+% Arrow draws from first point all the way to 2nd point,
+% ending with an outgoing arrow
+% See also InArrow
+%
+% args
+%		(x,y) of arrowhead
+%		(x,y) attachment to circuit
+%
+/OutArrowPrecalc
+	{
+	}
+		def
+
+
+/OutArrow
+	{
+	% label positioning
+	2 copy 
+	WArrow  1.2 mul
+	7 3 roll 
+	
+	4 copy
+	MakeBasis
+	WArrow mul  /Fy  exch def
+	WArrow mul  /Fx  exch def
+	LArrow mul  /Ey  exch def
+	LArrow mul  /Ex  exch def
+	newpath
+
+	% Draw fat white line for crossover gaps
+	4 copy    WLineGaps  ShrinkSeg
+		{
+		1 setgray    
+		0 setlinecap
+		WLineGaps setlinewidth
+		  moveto   lineto  stroke
+		}
+	if
+	
+
+	0 setgray
+	WLine setlinewidth
+	
+	% copy head point, for drawing
+	2 copy 	moveto
+	Ex  neg  Fx add
+	Ey  neg  Fy add
+	rlineto
+	
+	% again, for opposite side of arrowhead
+	2 copy 	moveto
+	Ex  neg  Fx sub
+	Ey  neg  Fy sub
+	rlineto
+	
+	% line from tail to head
+	moveto	
+	lineto
+	stroke
+
+	}
+		bind def
+
+
+
+
+/InArrowPrecalc
+	{
+	}
+		def
+
+
+				
+/InArrow
+	{
+	% same as OutArrow except negate wings' lengthwise components
+	
+	% label positioning
+	2 copy 
+	WArrow 1.41 mul
+	7 3 roll 
+	
+	4 copy
+	MakeBasis
+	WArrow mul  /Fy  exch def
+	WArrow mul  /Fx  exch def
+	LArrow mul  /Ey  exch def
+	LArrow mul  /Ex  exch def
+	newpath
+
+	% Draw fat white line for crossover gaps
+	4 copy    WLineGaps  ShrinkSeg
+		{
+		1 setgray    
+		0 setlinecap
+		WLineGaps setlinewidth
+		  moveto   lineto  stroke
+		}
+	if
+	
+
+	0 setgray
+	WLine setlinewidth
+	
+	% copy head point, for drawing
+	2 copy 	moveto
+	Ex     Fx add
+	Ey     Fy add
+	rlineto
+	
+	% again, for opposite side of arrowhead
+	2 copy 	moveto
+	Ex     Fx sub
+	Ey     Fy sub
+	rlineto
+	
+	% line from tail to head
+	moveto	
+	lineto
+	stroke
+	
+	}
+		bind def
+
+
+
+
+
+/AntPrecalc
+	{
+	/antw2   WAnt 2 div  def
+	}
+		def
+
+/Ant
+	{
+	newpath
+	moveto	
+	0  LAntStem  HAnt add  rlineto
+	antw2 neg   0    rmoveto
+	antw2      HAnt neg  rlineto
+	antw2      HAnt      rlineto
+	WAnt neg    0  rlineto
+	stroke
+	}
+		bind def
+
+
+% Line just draws a line between two points
+%
+% Args:
+% 	(x,y)
+% 	(x,y)
+
+/LinePrecalc
+	{
+	% nothing
+	}
+		def
+
+		
+/Line
+	{
+	/LW currentlinewidth def     % is going to be used a lot
+
+	% see if points are the same, and boogie on out of here if so
+
+	4 copy 3 -1 roll  sub abs 3 1 roll sub abs add
+	0 le
+		{
+		pop pop pop pop   % blow away the inputs
+		}
+	
+		{
+		newpath
+
+
+		% draw a fatter, shorter white line to make crossover gaps
+		% shorten the line by approx. 2*WLine at each end
+		4 copy WLineGaps  ShrinkSeg
+			{
+			1 setgray
+			WLineGaps   setlinewidth
+			0 setlinecap
+			moveto	lineto	stroke
+			}
+		if
+
+		% draw the complete black line, normal thickness, over the white bed
+		0 setgray
+		1 setlinecap
+		WLine setlinewidth	
+		moveto 	lineto	stroke
+		LW setlinewidth
+		}
+	
+	ifelse
+	}
+		def
+
+
+
+/Blank
+	{
+	LRes
+	Part2Setup	
+	% nothing
+	Part2Finish	
+	}
+		bind def
+
+
+
+% Resistor
+% args:
+% 	(x,y)
+% 	(x,y)
+% 	nlabels  - number of labels, normally two or three
+%   label1   - conventionally something like "R4"
+%   label2   - conventionally the ohms
+%   label3   - conventionally the wattage (optional)
+%
+% 
+/ResPrecalc
+	{
+	/resw2  WRes 2 div def
+	/resd   LRes NResPeaks div 4 div  def
+	}
+		def
+
+/Res
+	{
+	% label locating === experimental!
+	4 copy    MidPoint
+	WRes
+	7  3 roll  % puts label location info at the bottom of stack
+	
+	LRes
+	Part2Setup	
+	NResPeaks 
+		{
+		resd resw2 rlineto
+		resd dup add  WRes neg rlineto
+		resd resw2 rlineto
+		}
+	repeat
+	stroke
+	Part2Finish	
+	
+	% deposit_bounds
+	}
+		bind def
+
+
+
+
+/VarResPrecalc
+	{
+	ResPrecalc
+	}
+		def
+
+
+/VarRes    % Variable Resistor - two terminal
+	{
+	% label locating === experimental!
+	4 copy MidPoint	
+	WRes 1.2 mul
+	7  3 roll  % puts label location info at the bottom of stack
+
+
+	LRes
+	Part2Setup	
+	NResPeaks 
+		{
+		resd resw2 rlineto
+		resd dup add  WRes neg rlineto
+		resd resw2 rlineto
+		}
+	repeat
+	
+	% draw arrow
+	   1  -8.0   moveto
+	LRes 1 sub   8.0 lineto
+	currentpoint currentpoint
+	moveto   -1.5 -4 rlineto
+	moveto   -4 -1.5 rlineto
+	
+	stroke 
+	Part2Finish	
+	}
+		bind def
+
+
+
+
+
+/CapPrecalc
+	{
+	/capw2  WCap  2 div  def
+	}
+		def
+
+
+/Cap
+	{
+	% label locating data
+	4 copy MidPoint	
+	WCap  .55 mul
+	7  3 roll  % puts label location info at the bottom of stack
+
+	LCap
+	Part2Setup
+
+	TCap setlinewidth
+	0 setlinecap
+	0  capw2  rmoveto
+	0  WCap neg  rlineto
+	stroke
+
+	LCap  PCapBend mul  capw2       moveto
+	LCap   capw2 2 div
+	LCap   capw2 2  neg div
+	LCap  PCapBend mul   capw2 neg
+	curveto
+	stroke 
+	
+	Part2Finish
+	}
+		bind def
+
+
+/ElectroCap
+	{
+	% label locating === experimental!
+	4 copy MidPoint	
+	WCap  1.1 mul
+	7  3 roll  % puts label location info at the bottom of stack
+
+	% copy of code from Cap (can't just call it; need to omit Part2Finish)
+	LCap
+	Part2Setup
+
+	TCap setlinewidth
+	0 setlinecap
+	0  capw2  rmoveto
+	0  WCap neg  rlineto
+	stroke
+
+	LCap  PCapBend mul  capw2       moveto
+	LCap   capw2 2 div
+	LCap   capw2 2  neg div
+	LCap  PCapBend mul   capw2 neg
+	curveto
+	gsave  stroke  grestore 
+	
+
+	% new code --  Draw the plus sign
+	WLine .8 mul setlinewidth               % EXP STYLE MOD 2009
+	SSign 1.0 mul neg   WCap .6 mul    PlusSign 
+	WLine setlinewidth
+
+% Tail end of code stolen from Cap
+	Part2Finish
+	}
+		bind def
+
+
+
+/VarCap
+	{
+	% label locating === experimental!
+	4 copy MidPoint	
+	WCap 1.4 mul
+	7  3 roll  % puts label location info at the bottom of stack
+
+	LCap
+	Part2Setup
+
+	TCap setlinewidth
+	0 setlinecap
+	0  capw2  rmoveto
+	0  WCap neg  rlineto
+	stroke
+
+	LCap  PCapBend mul  capw2       moveto
+	LCap   capw2 2 div
+	LCap   capw2 2  neg div
+	LCap  PCapBend mul   capw2 neg
+	curveto
+	gsave  stroke  grestore 
+	
+	% draw arrow
+	WLine setlinewidth
+	 -9  -10.0 moveto
+	20  10.0 lineto
+	currentpoint currentpoint
+	moveto   -4 -8 rlineto
+	moveto   -8 -2 rlineto
+	stroke
+
+	Part2Finish
+	}
+		bind def
+
+
+
+
+/CoilPrecalc
+	{
+	/coilsx  LCoil 0.13 mul def
+	/coilbx  LCoil  coilsx 3 mul  add  4 div  def
+	/coilyy  WCoil  0.7 mul  def
+	/coilbb  coilyy .4 mul def
+	}
+		def
+		
+/CoilBigLoop
+	{
+	% already at current point; need to end up at (+coilbx,0)
+	currentpoint translate	
+	0 0 moveto
+	0 coilyy  
+	coilbx coilyy
+	coilbx 0
+	curveto
+	}
+		bind def
+		
+/CoilSmallLoop
+	{
+	currentpoint translate	
+	0  0  moveto
+	0  coilbb neg
+	coilsx neg  coilbb neg
+	coilsx neg  0 
+	curveto
+	}
+		bind def
+
+
+
+% Coil with or without iron
+%
+% args:
+%		iron     t/f
+%		(x,y)
+%		(x,y)
+%
+/Coil
+	{
+	/iron exch def
+	
+	% label locating === experimental!
+	4 copy MidPoint	
+	WCoil
+	7  3 roll  % puts label location info at the bottom of stack
+
+	LCoil
+	Part2Setup
+
+	gsave
+	iron 
+		{
+		0   coilyy 1.05 mul   moveto  currentpoint  
+		LCoil 0  rlineto  
+		moveto   0  IronSep  rmoveto   LCoil 0  rlineto
+		stroke
+		}
+	if
+	grestore
+
+	CoilBigLoop
+	3 {	CoilSmallLoop	CoilBigLoop } repeat
+	stroke
+
+			
+	Part2Finish
+	}
+		bind def
+
+
+
+% VTransformer  - transformer with vertical coils
+% HTransformer  - transformer with horizontal coils
+%
+% args
+%		iron      t/f
+%		n right coil  - number of loops in right coil
+%		n left coil  -   number of loops in left coil
+%		(x,y) right coil terminal #2
+%		(x,y) right terminal #1
+%		(x,y) left  terminal #2
+%		(x,y) left  terminal #1
+%
+/VTransformer
+	{
+	/iron exch def
+	/nloopsr  exch def
+	/nloopsl  exch def
+	
+	/ray exch def
+	/rax exch def
+	/rby exch def
+	/rbx exch def
+	/lay exch def
+	/lax exch def
+	/lby exch def
+	/lbx exch def
+	
+	% Find region bounded by the four points
+	% X coords: find rightmost x of left coil, and leftmost x of right coil
+	% Similar for Y coords
+	/lix   lax lbx largest   def
+	/rix   rax rbx smallest  def
+	/tiy  ray rby largest  lay lby largest  smallest  def   % top inner y
+	/biy  ray rby smallest lay lby smallest largest   def   % bottom inner y
+
+	% This sets the location of the transformer center
+	/centerx  lix rix add 2 div  def
+	/centery  tiy biy add 2 div def
+	
+	% compute coil lengths
+	/llen   coilsx neg  nloopsl 1 sub mul  coilbx nloopsl mul add   def
+	/rlen   coilsx neg  nloopsr 1 sub mul  coilbx nloopsr mul add   def
+
+	% compute y coords of coil ends 
+	/rcoilybottom   centery rlen 2 div sub	 def
+	/rcoilytop      centery rlen 2 div add	 def
+	/lcoilybottom   centery llen 2 div sub    def
+	/lcoilytop      centery llen 2 div add    def
+
+
+	% Determine x coords for coils - Right Coil, Left Coil
+	% This is position of point where loops attach to lines
+	% Must allow for size of big loops and also iron core
+	% (the parameter coilyy is being used in the x coord calc)
+	/dy coilyy   iron { IronSep .5 mul add 1.1}{0.95}  ifelse mul  def
+	/lcoilx	 centerx dy  sub def
+	/rcoilx	 centerx dy  add def
+
+% testing:
+%	centerx centery  redmarker
+%	centerx  IronSep 2 div sub  centery barlen 2 div add  bluemarker
+
+	iron 
+		{
+		% go to top of left line of core bars, then draw each line
+		/barlen  llen rlen largest  def
+		centerx  IronSep 2 div sub  centery barlen 2 div add  moveto
+		0  barlen neg  rlineto
+		IronSep 0 rmoveto
+		0 barlen  rlineto
+		stroke
+		}
+	if	
+	
+	% draw the left coil
+	% remember, BigLoop messes with the current transform
+	gsave
+	lcoilx  lcoilytop translate
+	-90 rotate
+	0 0 moveto
+	CoilBigLoop
+	nloopsl 1 sub  { CoilSmallLoop  CoilBigLoop } repeat
+	stroke
+	grestore
+	
+	% draw the right coil
+	%
+	gsave
+	rcoilx  rcoilybottom  translate
+	90  rotate
+	0 0 moveto
+	CoilBigLoop
+	nloopsr 1 sub  { CoilSmallLoop  CoilBigLoop } repeat
+	stroke
+	grestore
+	
+	
+	% connect lines to appropriate terminals
+	% connect top of left coil to higher  of the two left terminals
+	% and bottom to the lower.
+	lay lby gt  { lbx lby lax lay } { lax lay lbx lby } ifelse
+	lcoilx  lcoilytop  lcoilx  3 index Line  
+	lcoilx 1 index  Line
+	lcoilx  lcoilybottom  lcoilx  3 index Line  
+	lcoilx 1 index  Line
+	
+	% same for right coil...
+	ray rby gt  { rbx rby rax ray } { rax ray rbx rby } ifelse
+	rcoilx  rcoilytop  rcoilx  3 index Line  
+	rcoilx 1 index  Line
+	rcoilx  rcoilybottom  rcoilx  3 index Line  
+	rcoilx 1 index  Line
+	
+	% deposit label positioning info
+	% assumes that label will go above or below
+	centerx centery  
+	rlen llen largest .6 mul   % longest coil sets label displacement
+	}
+		bind def
+
+
+
+/HTransformer
+	{
+	% if we turn our heads 90 deg, then it's a vertical transformer
+	% Actually, we'll leave out the  - sign
+	% all we have to do is exchange  x <--> y  and make
+	% the corresponding change in the transform matrix
+	
+	% move coords up to top of stack 
+	11 3  roll 
+	
+	% swap x<->y   
+	4 { } repeat
+	
+	gsave
+	[ 0 1 1 0 0 0 ] concat
+	VTransformer
+	
+	% undo transform
+	grestore
+	
+	% label positioning info needs to be transformed x <--> y
+	
+	}
+		bind def 
+
+
+/CrystalPrecalc
+	{
+	/crysx1 LCrystal .27 mul   def
+	/crysx2 LCrystal crysx1 sub def
+	/crysy1  WCrystal .7 mul  .5 mul def
+	/crysy2  crysy1 neg  def
+	}
+		def
+
+
+/Crystal
+	{
+	% label locating === experimental!
+	4 copy MidPoint	
+	WCrystal .7 mul
+	7  3 roll  % puts label location info at the bottom of stack
+
+	LCrystal
+	Part2Setup
+
+	0  WCrystal 2 div neg  moveto
+	0  WCrystal  rlineto
+	LCrystal  WCrystal 2 div neg  moveto
+	0  WCrystal  rlineto
+	
+	crysx1 crysy1 moveto
+	crysx2 crysy1 lineto
+	crysx2 crysy2 lineto
+	crysx1 crysy2 lineto
+	crysx1 crysy1 lineto
+	
+	stroke
+		
+	Part2Finish
+	}
+		bind def
+
+
+/SwitchPrecalc
+	{
+	/swiopendx  ASwi  cos  LSwi mul  def
+	/swiopendy  ASwi  sin  LSwi mul  def
+	/swicdy   RSwiDot 0.4 mul def    % tweaks how lever attaches to dot
+	}
+		bind def
+
+
+/Switch
+% args:  
+% 		state    1=OPEN,  0=CLOSED, -1=OPEN ON OTHER SIDE 
+% 		(x,y)   - connect pt, hinge end
+% 		(x,y)   - connect pt 
+	{
+	/mystate exch def
+
+	% label locating === experimental!
+	4 copy MidPoint	
+	WRes   % dumb guess; no WSwi
+	7  3 roll  % puts label location info at the bottom of stack
+
+	LSwi
+	Part2Setup
+	
+	% draw two dots
+	0   0   RSwiDot  0 360 arc   fill	
+	LSwi 0  RSwiDot  0 360 arc   fill	
+	
+	% draw the lever
+	0 swicdy moveto
+	mystate 0 eq
+		{ swiopendx swiopendy rlineto }
+		{ LSwi 0  rlineto }
+	ifelse
+	stroke
+	
+	Part2Finish
+	
+	currentdict /mystate undef
+	}
+		bind def
+
+
+
+/BipPrecalc
+	{
+	/bipady LBipBase .25 mul  def
+	}
+		def
+		
+
+% Bipolar transistors
+% args:
+%      (x,y)  of collector
+%      (x,y)  of base
+%      (x,y)  of emitter
+%
+% Must have Cx = Ex  and By between Ey and Cy
+% Transistor may be facing left or right
+%
+/BipolarStuff   % private routine - use BipNPN or BipPNP
+	{
+	/Cy  exch def
+	/Cx  exch def
+	/By  exch def
+	/Bx  exch def
+	/Ey  exch def
+	/Ex  exch def
+
+	% Calculate x coord of base
+	/BBx Ex WBip   Ex Bx lt { add } { sub }  ifelse   def
+	
+	% calculate attachment points (just y coord) of E, C to base bar
+	/ACy By  bipady   Cy By gt { add } { sub }  ifelse  def
+	/AEy By  bipady   Ey By lt { sub } { add }  ifelse  def
+	
+	% calculate knee points for E, C  (just y coord)
+	/KCy  By   HBip 2 div  Cy By gt { add } { sub } ifelse  def
+	/KEy  By   HBip 2 div  Ey By lt { sub } { add } ifelse  def
+
+
+	newpath
+	
+	% Draw fat white lines
+	Ex Ey Cx Cy   WLineGaps ShrinkSeg
+		{
+		WLineGaps setlinewidth
+		1 setgray
+		0 setlinecap
+		moveto  lineto
+		}
+	if
+	
+	Bx By BBx  By  WLineGaps ShrinkSeg
+		{
+		moveto lineto
+		stroke
+		WLine setlinewidth
+		0 setgray
+		}
+	if	
+	
+	% Draw base bar
+	TBipBase  setlinewidth
+	BBx   By LBipBase 2 div sub  moveto
+	0 LBipBase  rlineto
+	stroke
+	
+	% Draw base terminal 
+	WLine setlinewidth
+	BBx  By  moveto  Bx By lineto  
+	stroke
+
+	% Draw collector
+	BBx  ACy   moveto
+	Cx   KCy  lineto
+	Cx    Cy  lineto    
+	stroke
+	
+	% Draw emitter   (but no arrow)
+	BBx  AEy  moveto
+	Ex   KEy lineto
+	Ex    Ey  lineto
+	stroke
+
+	% draw circle
+	FQCircle 
+		{	
+		BBx Ex add 2 div   By 
+		TQCircle  setlinewidth
+		RQCircle 
+		0 360 arc stroke
+		}
+	if
+	
+	% deposit label location info
+	BBx By RQCircle 1.52 mul
+	}
+		bind def
+
+
+/BipNPN
+	{
+	BipolarStuff
+
+	% Draw emitter arrow
+	WLine setlinewidth
+	/dx  WBip .6 mul   Bx Ex lt { neg } { } ifelse   def
+	/dy  HBip .4 mul   Ey Cy lt { }  { neg } ifelse  def
+	
+	Ex  KEy   moveto   dx 1.23  mul    dy .215 mul  neg    rlineto
+	Ex  KEy   moveto   dx  .61 mul    dy  1.05 mul       rlineto
+	stroke
+	}
+		bind def
+
+
+/BipPNP
+	{
+	BipolarStuff
+
+	% Draw emitter arrow
+	WLine setlinewidth
+	/dx  WBip .6 mul   Bx Ex lt  { }   { neg } ifelse   def
+	/dy  HBip .4 mul   Ey Cy lt { neg }  { }   ifelse  def
+	
+	BBx  AEy   moveto   dx 1.4 mul  0   rlineto
+	BBx  AEy   moveto   dx .9 mul   dy .75 mul        rlineto
+	stroke
+	}
+		bind def
+
+
+
+
+% FET - Field Effect Transistor
+%
+% args
+% 		(x,y)  for source
+%		(x,y)  for gate
+%		(x,y)  for drain
+
+/FetPrecalc
+	{
+	/fetady LBipBase .4 mul  def
+	}
+		def
+
+
+/FetStuff
+	{
+	% code stolen from Bipolar - keep the same names E,B,C
+	/Cy  exch def
+	/Cx  exch def
+	/By  exch def
+	/Bx  exch def
+	/Ey  exch def
+	/Ex  exch def
+
+	% Calculate x coord of bar
+	/BBx Ex WBip .7 mul  Ex Bx lt { add } { sub }  ifelse   def
+	
+	% calculate attachment points (just y coord) of E, C to base bar
+	/ACy By  fetady   Cy By gt { add } { sub }  ifelse  def
+	/AEy By  fetady   Ey By lt { sub } { add }  ifelse  def
+	
+	% calculate knee points for E, C  (just y coord)
+	% = same as attachment points y coords; same x as Cx or Ex
+	/KCy  ACy def
+	/KEy  AEy def
+
+	newpath
+	
+	% Draw fat white lines
+	WLineGaps setlinewidth
+	1 setgray
+	0 setlinecap
+	Ex Ey Cx Cy   WLineGaps ShrinkSeg
+		{
+		moveto  lineto stroke
+		}
+	if
+	
+	Bx By BBx  By  WLineGaps ShrinkSeg
+		{
+		moveto lineto stroke
+		}
+	if
+	WLine setlinewidth
+	0 setgray
+
+	
+	% Draw main bar
+	TFetBase  setlinewidth
+	BBx   By LFetBase 2 div sub  moveto
+	0 LFetBase  rlineto
+	stroke
+	
+	% Draw gate terminal 
+	WLine setlinewidth
+	BBx  By  moveto  Bx By lineto  
+	stroke
+
+	% Draw collector
+	BBx  ACy   moveto
+	Cx   KCy  lineto
+	Cx    Cy  lineto    
+	stroke
+	
+	% Draw emitter
+	BBx  AEy  moveto
+	Ex   KEy lineto
+	Ex    Ey  lineto
+	stroke
+
+	% draw circle
+	FQCircle 
+		{	
+		TQCircle  setlinewidth
+		BBx  By 
+		RQCircle 
+		0 360 arc stroke
+		}
+	if
+
+	% deposit label location info
+	BBx By RQCircle 1.2 mul
+	}
+		bind def
+		
+
+/FetN
+	{
+	FetStuff
+	
+	% Draw N-Channel arrow (away from substrate)
+	/dx  WFet .8 mul    Bx Ex lt { neg }  if   def
+	/dy  dx abs .45 mul  def
+	BBx  By moveto  currentpoint
+	dx  dy      rlineto
+	moveto
+	dx  dy neg  rlineto
+	stroke
+	}
+		bind def
+		
+		
+/FetP
+	{
+	FetStuff
+	
+	% Draw P-channel arrow (into substrate)
+	/dx  WFet .7 mul    Bx Ex lt { neg }  if   def
+	/dy  dx abs .75 mul  def
+	BBx dx 1.6 mul  add By moveto 	currentpoint
+	dx neg dy      rlineto
+	moveto
+	dx neg  dy neg  rlineto
+	stroke
+	}
+		bind def
+
+
+
+% Op Amp
+% Either + or - may be on top.
+% Depending on coords, op amp may appear in any of eight orientation
+% facing one of four directions, and +/- input interchange
+% OpAmp does this by comparing coords and then calling one 
+% of the  four functions OpAmpRt, OpAmpLf, OpAmpTop OpAmpBot.
+% These functions may be called directly.
+%
+% args:
+%		(x,y)   output 
+% 		(x,y)   + input
+% 		(x,y)   - input
+%
+/OpAmpPrecalc
+	{
+	}
+		def
+		
+/OpAmpRight
+	{
+	/Oy  exch def
+	/Ox  exch def
+	/Py  exch def
+	/Px  exch def
+	/My  exch def
+	/Mx  exch def
+	
+	newpath
+	WLine setlinewidth
+	0 setlinecap
+	
+	% Is the - input above the +?
+	/mtop  My Py gt  def
+	
+	% How much room along x axis to fit the op amp into?
+	/roomx  Ox    Mx Px gt { Mx } { Px } ifelse   sub  def
+
+	% Figure out where the apex of the triangle will be
+	/apexx  Ox  roomx  LOp sub  2 div  sub def
+	/apexy  Oy  def
+	
+	% Figure out where the inputs connect to the triangle
+	/basex apexx  LOp sub  def
+	/miy  apexy SOp 2 div   mtop { add } { sub } ifelse  def
+	/piy  apexy SOp 2 div   mtop { sub } { add } ifelse  def
+	
+	% Draw lead to + input, and + sign
+	basex  piy    Px  piy Line
+	Px     piy    Px  Py  Line
+	WLine setlinewidth
+	basex dXOpSigns add   piy  PlusSign
+	
+	% Draw lead to - input, and - sign
+	basex miy    Mx  miy Line
+	Mx    miy    Mx  My   Line
+	WLine setlinewidth
+	basex dXOpSigns add   miy  MinusSign
+	
+	% Draw lead to output
+	apexx  apexy
+	Ox Oy Line
+	stroke
+	
+	% Draw triangle
+	/miy  apexy  WOp 2 div   sub  def
+	/piy  apexy  WOp 2 div   add  def
+	TOpLine setlinewidth
+	apexx apexy moveto
+	basex miy lineto
+	basex piy lineto
+	closepath
+	stroke
+	
+	
+	WLine  setlinewidth
+	
+	% label to go near apex, for lack of brain power to do better
+	apexx .6 mul basex .4 mul add  apexy
+	WOp .6 mul
+
+	currentdict  /miy undef
+	currentdict  /piy undef
+	currentdict  /apexx undef
+	currentdict  /apexy undef
+	}
+		bind def
+
+
+/OpAmpLeft
+	{
+	% Copied from OpAmpRight, with certain x-coord calculations reversed
+	
+	/Oy  exch def
+	/Ox  exch def
+	/Py  exch def
+	/Px  exch def
+	/My  exch def
+	/Mx  exch def
+	
+	newpath
+	WLine setlinewidth
+	0 setlinecap
+	
+	% Is the - input above the +?
+	/mtop  My Py gt  def
+	
+	
+	% How much room along x axis to fit the op amp into?
+	/roomx  Ox    Mx Px lt { Mx } { Px } ifelse   sub  neg  def %left: neg
+
+	% Figure out where the apex of the triangle will be
+	/apexx  Ox  roomx  LOp sub  2 div  add def   %left: add
+	/apexy  Oy  def
+	
+	% Figure out where the inputs connect to the triangle
+	/basex apexx  LOp add  def   %left: add
+	/miy  apexy SOp 2 div   mtop { add } { sub } ifelse  def
+	/piy  apexy SOp 2 div   mtop { sub } { add } ifelse  def
+	
+	% Draw lead to + input, and + sign
+	basex  piy    Px  piy Line
+	Px     piy    Px  Py  Line
+	WLine setlinewidth
+	basex dXOpSigns sub   piy  PlusSign  %left: sub
+	
+	% Draw lead to - input, and - sign
+	basex miy    Mx  miy Line
+	Mx    miy    Mx  My  Line
+	WLine setlinewidth
+	basex dXOpSigns sub   miy  MinusSign  % left: sub
+	
+	% Draw lead to output
+	apexx  apexy
+	Ox Oy Line
+	stroke
+	
+	% Draw triangle
+	/miy  apexy  WOp 2 div   sub  def  %left: unchanged; these are y coords
+	/piy  apexy  WOp 2 div   add  def
+	TOpLine setlinewidth
+	apexx apexy moveto
+	basex miy lineto
+	basex piy lineto
+	closepath
+	stroke
+	
+	
+	WLine  setlinewidth
+	
+	% label to go near apex, for lack of brain power to do better
+	apexx .6 mul basex .4 mul add  apexy
+	WOp .6 mul
+
+	currentdict  /miy undef
+	currentdict  /piy undef
+	currentdict  /apexx undef
+	currentdict  /apexy undef
+	}
+		bind def
+
+
+
+% Battery
+/BatteryPrecalc
+	{
+	/wbat2   WBattery  2 div  neg def
+	/wbatn2  WBatteryN 2 div  neg def
+	}
+		def
+
+/Battery
+	{
+	% label locating === experimental!
+	4 copy MidPoint	
+	WBattery .7 mul
+	7  3 roll  % puts label location info at the bottom of stack
+
+	LBattery
+	Part2Setup
+	
+	currentlinewidth
+	currentlinecap
+	0 setlinecap
+	TBatteryP setlinewidth
+	0                wbat2  moveto    0 WBattery rlineto
+	LBattery .67 mul  wbat2  moveto    0 WBattery rlineto
+	stroke
+	TBatteryN setlinewidth
+	LBattery .33 mul  wbatn2 moveto    0 WBatteryN rlineto
+	LBattery .99 mul  wbatn2 moveto    0 WBatteryN rlineto
+	stroke
+	setlinecap  % restore original pen style
+	setlinewidth
+	
+	SSign 1.20 mul neg   wbat2 1.22 mul  PlusSign 
+	
+	Part2Finish	
+	}
+		bind def
+
+
+% Diode 
+%
+% args
+%		(x,y)  anode
+%		(x,y)  cathode
+%
+/DiodePrecalc
+	{
+	/diodew2  WDiode 2 div  def
+	}
+		def
+
+
+/Diode
+	{
+	% label locating === experimental!
+	4 copy MidPoint	
+	WDiode .8 mul
+	7  3 roll  % puts label location info at the bottom of stack
+
+	LDiode
+	Part2Setup
+	
+	% cathode
+	currentlinecap
+	currentlinewidth
+	TDiodeCath setlinewidth
+	0 setlinecap
+	0  diodew2  rmoveto
+	0  WDiode neg  rlineto
+	stroke
+	setlinewidth
+	setlinecap
+
+	% triangle
+	0 TDiodeCath 4 div add  0 moveto
+	LDiode diodew2 rlineto
+	0  WDiode neg  rlineto
+	closepath
+	fill
+
+	Part2Finish
+	}
+		bind def
+
+
+/Zener
+	{
+	% label locating === experimental!
+	4 copy MidPoint	
+	WDiode
+	7  3 roll  % puts label location info at the bottom of stack
+
+	LDiode
+	Part2Setup
+	
+	% cathode
+	currentlinecap
+	currentlinewidth
+	TDiodeCath setlinewidth
+	2 setlinecap
+	
+	diodew2 -.6 mul   diodew2 1.2 mul  rmoveto
+	0  diodew2  lineto
+	0  diodew2 neg  lineto
+	diodew2  .6 mul   diodew2 -1.2 mul  lineto
+	stroke
+	setlinewidth
+	setlinecap
+
+	% triangle
+	0 TDiodeCath 4 div add  0 moveto
+	LDiode diodew2 rlineto
+	0  WDiode neg  rlineto
+	closepath
+	fill
+
+	Part2Finish
+	}
+		bind def
+
+
+
+/Tunnel
+	{
+	% label locating === experimental!
+	4 copy MidPoint	
+	WDiode
+	7  3 roll  % puts label location info at the bottom of stack
+
+	LDiode
+	Part2Setup
+	
+	% cathode
+	currentlinecap
+	currentlinewidth
+	TDiodeCath setlinewidth
+	0 setlinecap
+	0  diodew2  rmoveto
+	0  WDiode neg  rlineto
+	stroke
+	setlinewidth
+	setlinecap
+
+	% round body
+	LDiode 2 div  TDiodeCath 2 div  add  0    LDiode 2 div  0 360  arc
+	fill
+
+	Part2Finish
+	}
+		bind def
+
+
+/LED
+	{
+	% label locating === experimental!
+	4 copy MidPoint	
+	WDiode 1.0 mul
+	7  3 roll  % puts label location info at the bottom of stack
+
+	LDiode
+	Part2Setup
+	
+	% cathode
+	currentlinecap
+	currentlinewidth
+%	TDiodeCath setlinewidth
+	0 setlinecap
+	0  diodew2  rmoveto
+	0  WDiode neg  rlineto
+	stroke
+	setlinewidth
+	setlinecap
+
+	% triangle
+	0 TDiodeCath 4 div add  0 moveto
+	LDiode diodew2 rlineto
+	0  WDiode neg  rlineto
+	closepath
+	stroke
+	
+	%LDiode 2 div  0 LDiode 1.05 mul 0 360 arc stroke
+
+	Part2Finish
+	}
+		bind def
+
+
+/EmptyRound
+% just an empty circle with two terminals, 
+% used as start of a meter, signal source, etc.
+% Use as an example.   
+	{
+	LRound 2 mul
+	Part2Setup
+	newpath
+	LRound  0     LRound     0 360 arc
+	stroke
+	Part2Finish
+	}
+		def
+
+
+
+/VoltSourcePrecalc
+	{
+	}
+		def
+		
+
+/VoltSource
+% args:
+% 		(x,y) 	'+' end
+% 		(x,y) 	'-' end
+	{
+	% label locating === experimental!
+	4 copy MidPoint	
+	LRound 1.2 mul
+	7  3 roll  % puts label location info at the bottom of stack
+
+	LRound 2 mul
+	Part2Setup
+	newpath
+	LRound  0     LRound     0 360 arc
+	
+	SSign 1.1 mul         neg   SSign 1.3 mul  PlusSign  
+	SSign 3.1 mul  LRound add   SSign 1.3 mul  MinusSign 
+	stroke
+	Part2Finish
+	}
+		bind def
+
+
+
+/SineSourcePrecalc
+	{
+	/RSine  LRound 0.32 mul  def
+	}
+		bind def
+		
+
+/SineSource
+%
+% 		(x,y)
+% 		(x,y)
+	{
+
+	% label locating === experimental!
+	4 copy MidPoint	
+	LRound 1.15 mul
+	7  3 roll  % puts label location info at the bottom of stack
+
+	LRound 2 mul
+	Part2Setup
+	newpath
+	LRound  0     LRound     0 360 arc
+	
+	% Draw the sine wave
+	% move to center of  circle
+	LRound neg  0  rmoveto
+	% remember this place
+	currentpoint
+	currentpoint
+	% draw right half of sine as a bottom half of a circle
+	exch RSine add exch   RSine 180 360 arc
+	stroke  % to avoid initial line to this next arc
+	exch RSine sub exch   RSine 0   180 arc
+	
+	stroke
+	Part2Finish
+	}
+		bind def
+
+
+
+
+
+% Box just draws a box, no terminals
+% it produces label positioning info like other parts
+% The distance is always zero, however, 
+% assuming PartLabelCenter will be used.
+%
+%
+% args (unusual order)
+%		
+%		xright
+%		xleft
+%		ybot
+%		ytop
+%		
+% output
+%				
+%
+/Box
+	{
+	TOpLine setlinewidth
+	0 setgray
+	newpath
+	1 index  4 index moveto
+	dup  4 index lineto
+	dup 3 index lineto
+	1 index 3 index lineto
+	closepath
+	gsave
+	1 setgray
+	fill
+	grestore
+	0 setgray
+	stroke
+	add 2 div 3 1 roll add 2 div
+	0
+	}
+		bind def
+
+
+
+
+
+
+
+
+
+% Label (in all variations) is for all the text labels
+% just floating around nowhere, or labels for parts.
+% For LabelTL, the given position is the upper left corner of the text.
+%
+% All the label positions are:
+%   first letter:   T=top, M=middle, B=bottom  
+%   second letter:  L=left, C=center, R=right 
+%   All nine combinations are defined.
+%   
+% args:
+% 		(xc,yc)     
+%       [ line, line, ... ]
+%
+/LabelTL
+	{
+	LabelFont setfont
+	moveto 
+	0 dyLabel neg 2 add rmoveto
+		{
+		currentpoint
+		3 -1 roll   % bring Nth string to top, over saved point
+		show
+		moveto  0 dyLabel neg  rmoveto
+		}
+	forall
+	}
+		bind def
+
+
+
+		
+/LabelBL		
+	{
+	% Measure height of the text 
+	2 index    % copy the text list 
+    length      % get the number of text lines
+	dyLabel mul  % leaves height of text block on top of stack	
+	
+	% move up by altering the (x,y) already on the stack
+	add
+	% Let someone else to the grunt work
+	% because we, the beautiful and strong, must exploit the working class
+	LabelTL
+	}
+		bind def
+
+/LabelML
+	{
+	% Measure height of the text 
+	2 index    % copy the text list
+	length
+	dyLabel mul  % leaves height of text block on top of stack	
+	
+	% move halfway there
+	2 div add
+	LabelTL
+	}
+		bind def
+
+
+
+
+/LabelTR
+	{
+	LabelFont setfont
+	moveto 
+	0 dyLabel neg 2 add rmoveto
+		{
+		currentpoint
+		3 -1 roll   % bring Nth string to top, over saved point
+		dup  stringwidth  pop neg 0  rmoveto
+		show
+		moveto  0 dyLabel neg  rmoveto
+		}
+	forall
+	}
+		bind def
+
+/LabelMR
+	{
+	% Measure height of the text 
+	2 index    % copy the text list
+	length
+	dyLabel mul  % leaves height of text block on top of stack	
+	
+	% move halfway there
+	2 div add
+	LabelTR
+	}
+		bind def
+
+/LabelBR
+	{
+	% Steal code from LabelTL but call LabelTR instead
+	% Measure height of the text 
+	2 index    % copy the text list
+	length
+	dyLabel mul  % leaves height of text block on top of stack	
+	
+	% move up by altering the (x,y) already on the stack
+	add
+	LabelTR
+	}
+		bind def
+
+
+% For horizontal centering, do same as right-side alignment but 
+% but adjust only half-way.
+% note that lines are centered individually, the whole set
+% is not left or right justified
+/LabelTC
+	{
+	LabelFont setfont
+	moveto 
+	0 dyLabel neg 2 add rmoveto
+		{
+		currentpoint
+		3 -1 roll   % bring Nth string to top, over saved point
+		
+		dup  stringwidth  pop  neg 2 div  0  rmoveto
+		show
+		moveto  0 dyLabel neg  rmoveto
+		}
+	forall
+	}
+		bind def
+
+/LabelMC
+	{
+	% Measure height of the text 
+	2 index    % copy the text list
+	length
+	dyLabel mul  % leaves height of text block on top of stack	
+	
+	% move halfway there
+	2 div add
+	LabelTC
+	}
+		bind def
+				
+/LabelBC
+	{
+	% Steal code from LabelTL but call LabelTC instead
+	% Measure height of the text 
+	2 index    % copy the text list
+	length
+	dyLabel mul  % leaves height of text block on top of stack	
+	
+	% move up by altering the (x,y) already on the stack
+	add
+	LabelTC
+	}
+		bind def
+
+
+
+
+
+% Movement operators for use with PartLabel* routines				
+/u  { add } bind def
+/d  { sub } bind def
+/r  { 3 -1 roll  add exch  } bind def
+/l  { 3 -1 roll exch sub exch } bind def
+
+
+% PartLabelX where X is U, D, L or R, draws a label
+% in relation to a part.
+% Every part leaves a description of its location on the stack.
+% args:
+%		size                 = safe distance from part
+% 		y                    = part location y
+%		x                    = part location x
+%		[ line, line ... ]   = label text
+%
+% Each PartLabelX applies one of the movement operators r,l,u,d
+% and then calls one of the LabelXX procedures
+%
+/PartLabelAbove  { u LabelBC }  bind def
+/PartLabelBelow  { d LabelTC }  bind def
+/PartLabelLeft   { l LabelMR }  bind def
+/PartLabelRight  { r LabelML }  bind def
+/PartLabelLowerRight  { dup  4 1 roll r   3 2 roll d  LabelML }  bind def  % new 2009
+
+% Centered part label is good for hollow parts like VoltSource, diode bridge, etc.
+/PartLabelCenter { pop LabelMC }  bind def
+
+
+
+% NoLabel takes same args as the PartLabels, but draws nothing.
+% Should be used after drawing any part for which there's no label
+%
+/NoPartLabel
+	{
+	pop
+	pop pop
+	}
+		bind def
+
+
+%%script
+
+% Call all Precalc routines
+GndPrecalc
+AntPrecalc
+LinePrecalc
+SwitchPrecalc
+ResPrecalc
+VarResPrecalc
+CapPrecalc
+CoilPrecalc
+CrystalPrecalc
+DiodePrecalc
+SineSourcePrecalc
+BipPrecalc
+FetPrecalc
+BatteryPrecalc
+InArrowPrecalc
+OutArrowPrecalc
+
+
+% landscape layout
+8.5 inch 0 translate  90 rotate
+
+
+% pixelizing errors can be minimized with this tweak:
+.0001 .01 translate  .002 rotate
+
+
+2 setlinewidth
+1 setlinejoin
+1 setlinecap
+0 setgray
+
+[(IC1)(555)(clock)]  540.0 488.52 133.38 183.186 Box  PartLabelCenter
+[(Run/Stop)]  50.4 472.68 117.18 472.68 0  Switch PartLabelBelow 
+117.18 472.68 140.58 472.68  Line
+140.58 472.68 140.58 488.52  Line
+50.4 472.68 50.4 465.48    Gnd 
+[(10k)]  96.3 549.0 140.58 549.0  Res PartLabelAbove 
+[(10k)]  140.58 549.0 175.986 549.0  Res PartLabelAbove 
+140.58 549.0 140.58 540.0  Line
+175.986 549.0 175.986 540.0  Line
+140.58 549.0  Dot
+175.986 549.0  Dot
+[(+)]  175.986 549.0 175.986 563.4  InArrow PartLabelAbove
+96.3 549.0 96.3 522.72  Line
+96.3 532.8 133.38 532.8  Line
+96.3 522.72 133.38 522.72  Line
+[(1n )]  96.3 522.72 96.3 498.366  Cap PartLabelLeft 
+96.3 532.8  Dot
+96.3 522.72  Dot
+96.3 498.366 96.3 491.166    Gnd 
+[(IC2)(74177)(y counter)]  452.52 385.2144 126.18 190.386 Box  PartLabelCenter
+[(IC3)(74177)(x counter)]  338.4144 271.1088 126.18 190.386 Box  PartLabelCenter
+[(IC4a)(74177)(z counter)]  217.1088 149.8032 126.18 190.386 Box  PartLabelCenter
+[(IC4b)(left/right)]  131.8032 107.5032 126.18 190.386 Box  PartLabelCenter
+190.386 122.8032 548.9028 122.8032  Line
+[(R17)(L/R seperation)(24k)]  548.9028 122.8032 643.9072 122.8032  Res PartLabelAbove 
+548.9028 106.9632 548.9028 122.8032  Line
+643.9072 106.9632 643.9072 122.8032  Line
+[(R18)(82k)]  548.9028 106.9632 596.405 106.9632  Res PartLabelBelow 
+[(    R19)(    24k)]  596.405 106.9632 643.9072 106.9632  Res PartLabelBelow 
+[()()(C5)(10u)]  596.405 106.9632 596.405 75.9672000000001  Cap PartLabelRight 
+596.405 75.9672000000001 596.405 75.9672000000001    Gnd 
+548.9028 122.8032  Dot
+596.405 106.9632  Dot
+94.68 49.6872000000001 117.18 49.6872000000001  Line
+94.68 91.7532000000001 94.68 448.092  Line
+105.93 91.7532000000001 105.93 418.8672  Line
+117.18 91.7532000000001 117.18 389.6424  Line
+94.68 448.092 126.18 448.092  Line
+105.93 418.8672 126.18 418.8672  Line
+117.18 389.6424 126.18 389.6424  Line
+94.68 333.9864 126.18 333.9864  Line
+105.93 304.7616 126.18 304.7616  Line
+117.18 275.5368 126.18 275.5368  Line
+94.68 212.6808 126.18 212.6808  Line
+105.93 183.456 126.18 183.456  Line
+117.18 154.2312 126.18 154.2312  Line
+94.68 333.9864  Dot
+105.93 304.7616  Dot
+117.18 275.5368  Dot
+94.68 212.6808  Dot
+105.93 183.456  Dot
+117.18 154.2312  Dot
+[( )]  94.68 49.6872000000001 94.68 91.7532000000001 0  Switch   
+[( )]  105.93 49.6872000000001 105.93 91.7532000000001 0  Switch   
+[( )]  117.18 49.6872000000001 117.18 91.7532000000001 0  Switch   
+105.93 49.6872000000001 105.93 42.4872000000001    Gnd 
+50.4 373.6944 50.4 49.6872000000001  Line
+50.4 49.6872000000001 50.4 42.4872000000001    Gnd 
+84.24 373.6944 130.68 373.6944  Line
+130.68 373.6944 130.68 385.2144  Line
+[(Load Y)]  50.4 373.6944 84.24 373.6944 0  Switch PartLabelAbove 
+84.24 259.5888 130.68 259.5888  Line
+130.68 259.5888 130.68 271.1088  Line
+[(  Load X)]  50.4 259.5888 84.24 259.5888 0  Switch PartLabelAbove 
+50.4 259.5888  Dot
+84.24 95.9832000000001 130.68 95.9832000000001  Line
+130.68 95.9832000000001 130.68 107.5032  Line
+[(  Load Z)]  50.4 95.9832000000001 84.24 95.9832000000001 0  Switch PartLabelAbove 
+50.4 95.9832000000001  Dot
+[(IC5   2102)(Static RAM)]  85.9032000000001 34.0632000000001 198.486 314.766 Box  PartLabelCenter
+204.786 548.28 317.466 548.28  Line
+317.466 548.28 317.466 541.08    Gnd 
+204.786 85.9032000000001 204.786 459.72  Line
+204.786 504.0 204.786 459.72  Res   
+204.786 548.28 204.786 504.0  LED   
+245.466 85.9032000000001 245.466 459.72  Line
+245.466 504.0 245.466 459.72  Res   
+245.466 548.28 245.466 504.0  LED   
+285.606 85.9032000000001 285.606 459.72  Line
+285.606 504.0 285.606 459.72  Res   
+285.606 548.28 285.606 504.0  LED   
+216.486 85.9032000000001 216.486 459.72  Line
+216.486 504.0 216.486 459.72  Res   
+216.486 548.28 216.486 504.0  LED   
+256.896 85.9032000000001 256.896 459.72  Line
+256.896 504.0 256.896 459.72  Res   
+256.896 548.28 256.896 504.0  LED   
+297.036 85.9032000000001 297.036 459.72  Line
+297.036 504.0 297.036 459.72  Res   
+297.036 548.28 297.036 504.0  LED   
+228.186 85.9032000000001 228.186 459.72  Line
+228.186 504.0 228.186 459.72  Res   
+228.186 548.28 228.186 504.0  LED   
+268.326 85.9032000000001 268.326 459.72  Line
+268.326 504.0 268.326 459.72  Res   
+268.326 548.28 268.326 504.0  LED   
+308.466 85.9032000000001 308.466 459.72  Line
+308.466 504.0 308.466 459.72  Res   
+308.466 548.28 308.466 504.0  LED   
+190.386 448.092 317.466 448.092  Line
+190.386 418.8672 317.466 418.8672  Line
+190.386 389.6424 317.466 389.6424  Line
+190.386 333.9864 317.466 333.9864  Line
+190.386 304.7616 317.466 304.7616  Line
+190.386 275.5368 317.466 275.5368  Line
+190.386 212.6808 317.466 212.6808  Line
+190.386 183.456 317.466 183.456  Line
+190.386 154.2312 317.466 154.2312  Line
+204.786 448.092  Dot
+216.486 418.8672  Dot
+228.186 389.6424  Dot
+245.466 333.9864  Dot
+256.896 304.7616  Dot
+268.326 275.5368  Dot
+285.606 212.6808  Dot
+297.036 183.456  Dot
+308.466 154.2312  Dot
+/Times-Roman findfont 11 scalefont setfont
+314.466 482.4 moveto (LED resistors all 1k) show
+/Times-Roman findfont 11 scalefont setfont
+317.466 522.72 moveto (LEDs: X,Y,Z addresses) show
+/Times-Roman findfont 11.0 scalefont setfont
+388.094 177.9912 moveto (Digital to ) show
+388.094 166.9912 moveto (Analog Conv.) show
+388.094 155.9912 moveto (all resistors 10k) show
+317.466 448.092 345.978 448.092  Res   
+317.466 418.8672 345.978 418.8672  Res   
+317.466 389.6424 345.978 389.6424  Res   
+376.974 448.092 345.978 448.092  Res   
+376.974 418.8672 345.978 418.8672  Res   
+376.974 389.6424 345.978 389.6424  Res   
+376.974 448.092 376.974 418.8672  Res   
+376.974 418.8672 376.974 389.6424  Res   
+317.466 373.2588 345.978 373.2588  Res   
+345.978 373.2588 376.974 373.2588  Res   
+317.466 373.2588 317.466 366.0588    Gnd 
+376.974 373.2588 376.974 389.6424  Line
+376.974 448.092  Dot
+376.974 418.8672  Dot
+376.974 389.6424  Dot
+317.466 333.9864 345.978 333.9864  Res   
+317.466 304.7616 345.978 304.7616  Res   
+317.466 275.5368 345.978 275.5368  Res   
+376.974 333.9864 345.978 333.9864  Res   
+376.974 304.7616 345.978 304.7616  Res   
+376.974 275.5368 345.978 275.5368  Res   
+376.974 333.9864 376.974 304.7616  Res   
+376.974 304.7616 376.974 275.5368  Res   
+317.466 259.1532 345.978 259.1532  Res   
+345.978 259.1532 376.974 259.1532  Res   
+317.466 259.1532 317.466 251.9532    Gnd 
+376.974 259.1532 376.974 275.5368  Line
+376.974 333.9864  Dot
+376.974 304.7616  Dot
+376.974 275.5368  Dot
+317.466 212.6808 345.978 212.6808  Res   
+317.466 183.456 345.978 183.456  Res   
+317.466 154.2312 345.978 154.2312  Res   
+376.974 212.6808 345.978 212.6808  Res   
+376.974 183.456 345.978 183.456  Res   
+376.974 154.2312 345.978 154.2312  Res   
+376.974 212.6808 376.974 183.456  Res   
+376.974 183.456 376.974 154.2312  Res   
+317.466 140.7258 345.978 140.7258  Res   
+345.978 140.7258 376.974 140.7258  Res   
+317.466 140.7258 317.466 133.5258    Gnd 
+376.974 140.7258 376.974 154.2312  Line
+376.974 212.6808  Dot
+376.974 183.456  Dot
+376.974 154.2312  Dot
+376.974 448.092 392.094 448.092  Line
+[(1k)]  392.094 448.092 392.094 403.812  Res PartLabelRight 
+392.094 403.812 392.094 396.612    Gnd 
+[(C1)(10u)]  392.094 448.092 476.2584 448.092  Cap PartLabelAbove 
+[(R1)(100k)(shrink)(with dist)]  476.2584 448.092 476.2584 403.812  Res PartLabelLeft 
+476.2584 403.812 476.2584 301.2408  Line
+476.2584 448.092 508.6584 448.092  Line
+[(R2)(100k)]  508.6584 448.092 508.6584 403.812  Res PartLabelLeft 
+392.094 448.092  Dot
+476.2584 448.092  Dot
+508.6584 448.092  Dot
+[(Q1)(Y coord)(shrink)]  548.9028 422.23248 508.6584 448.092 548.9028 474.66  BipNPN  PartLabelRight 
+[(D1)]  548.9028 389.6424 548.9028 422.23248  Diode PartLabelLeft 
+548.9028 389.6424 548.9028 382.4424    Gnd 
+508.6584 403.812 508.6584 396.612    Gnd 
+[(R3)(7.5k)]  548.9028 474.66 548.9028 518.94  Res PartLabelRight 
+[(+)]  548.9028 518.94 548.9028 523.368  InArrow PartLabelAbove
+[(C2)(10u)]  548.9028 474.66 669.1072 474.66  Cap PartLabelAbove 
+[(Q4)(dot/blank)]  669.1072 430.38 701.4316 442.3356 669.1072 474.66  BipNPN  PartLabelLeft 
+669.1072 430.38 669.1072 423.18    Gnd 
+[(R4)(24k)]  669.1072 474.66 669.1072 518.94  Res PartLabelRight 
+[(+)]  669.1072 518.94 669.1072 523.368  InArrow PartLabelAbove
+[(VERT)]  669.1072 474.66 741.0316 474.66  OutArrow PartLabelAbove
+[(R5)(10k)]  701.4316 442.3356 701.4316 398.0556  Res PartLabelLeft 
+701.4316 398.0556 701.4316 59.9832000000001  Line
+701.4316 59.9832000000001 314.766 59.9832000000001  Line
+[(1k)]  328.266 59.9832000000001 328.266 24.5592000000001  Res PartLabelRight 
+[(dot state)(LED)( )( )()]  372.546 24.5592000000001 328.266 24.5592000000001  LED PartLabelRight 
+372.546 24.5592000000001 372.546 10.1592000000001    Gnd 
+548.9028 474.66  Dot
+669.1072 474.66  Dot
+328.266 59.9832000000001  Dot
+158.283 75.1032000000001 198.486 75.1032000000001  Line
+[()(Write)(N.O.P.B.)]  158.283 25.0632000000001 158.283 75.1032000000001 0  Switch PartLabelLeft 
+158.283 25.0632000000001 158.283 17.8632000000001    Gnd 
+189.486 66.1032000000001 198.486 66.1032000000001  Line
+[(Data)]  189.486 25.0632000000001 189.486 66.1032000000001 0  Switch PartLabelLeft 
+189.486 25.0632000000001 189.486 17.8632000000001    Gnd 
+453.2184 301.2408 453.2184 338.4864  Line
+[(R12)(1k)]  453.2184 338.4864 453.2184 382.7664  Res PartLabelLeft 
+[(+)]  453.2184 382.7664 453.2184 385.7664  InArrow PartLabelAbove
+376.974 333.9864 392.094 333.9864  Line
+[(R6)(1k)]  392.094 333.9864 392.094 298.5624  Res PartLabelRight 
+392.094 298.5624 392.094 298.5624    Gnd 
+[(C3)(10u)]  392.094 333.9864 445.2184 333.9864  Cap PartLabelAbove 
+445.2184 333.9864 548.9028 333.9864  Line
+[(Q2)(X coord)(shrink)]  595.6272 308.12688 548.9028 333.9864 595.6272 362.7864  BipNPN  PartLabelRight 
+[(D2)]  595.6272 301.2408 595.6272 308.12688  Diode PartLabelRight 
+595.6272 301.2408 595.6272 294.0408    Gnd 
+[(R8)(100k)]  548.9028 333.9864 548.9028 308.4408  Res PartLabelRight 
+548.9028 308.4408 548.9028 301.2408    Gnd 
+[(R7)(100k)(shrnk)]  508.6584 333.9864 508.6584 301.2408  Res PartLabelRight 
+[(R9)(7.5k)]  595.6272 407.0664 595.6272 362.7864  Res PartLabelLeft 
+[(+)]  595.6272 407.0664 595.6272 411.4944  OutArrow PartLabelAbove
+[(C4)(10u)]  595.6272 362.7864 643.9072 362.7864  Cap PartLabelAbove 
+643.9072 362.7864 643.9072 122.8032  Line
+[(Horiz)]  643.9072 362.7864 679.9072 362.7864  OutArrow PartLabelAbove
+595.6272 362.7864  Dot
+643.9072 362.7864  Dot
+643.9072 122.8032  Dot
+392.094 333.9864  Dot
+376.974 212.6808 508.6584 212.6808  Line
+420.894 301.2408 508.6584 301.2408  Line
+[(Q3)]  453.2184 234.8208 420.894 256.9608 453.2184 301.2408  BipNPN  PartLabelAbove 
+453.2184 234.8208 453.2184 227.6208    Gnd 
+420.894 301.2408 508.6584 301.2408  Line
+[()(R10)(220k)]  420.894 301.2408 420.894 256.9608  Res PartLabelLeft 
+[(R11)(220k)]  420.894 212.6808 420.894 256.9608  Res PartLabelLeft 
+476.2584 242.2008 476.2584 212.6808  Line
+508.6584 301.2408 508.6584 271.7208  Line
+[()(R13)(100k)]  476.2584 301.2408 476.2584 242.2008  Res PartLabelLowerRight 
+[( )(R14)(100k)]  508.6584 271.7208 508.6584 212.6808  Res PartLabelLowerRight 
+595.6272 271.7208 480.2584 271.7208  OutArrow  
+719.4316 242.2008 512.6584 242.2008  OutArrow  
+[(R16)(100k)(Y persp)(shear)]  719.4316 474.66 719.4316 242.2008  Res PartLabelRight 
+719.4316 474.66  Dot
+[(R15)(100k)]  595.6272 271.7208 643.9072 271.7208  Res PartLabelBelow 
+643.9072 271.7208  Dot
+476.2584 301.2408  Dot
+508.6584 333.9864  Dot
+548.9028 333.9864  Dot
+508.6584 301.2408  Dot
+476.2584 212.6808  Dot
+420.894 212.6808  Dot
+420.894 256.9608  Dot
+453.2184 301.2408  Dot
+158.283 488.52 158.283 452.52  Line
+158.283 385.2144 158.283 338.4144  Line
+158.283 271.1088 158.283 217.1088  Line
+158.283 149.8032 158.283 131.8032  Line
+/Times-Roman findfont 22 scalefont setfont
+352.8 540.0 moveto (Stereoscopic 8x8x8 Scope Display) show
+/Times-Roman findfont 11 scalefont setfont
+475.2 183.6 moveto (All transistors are 2n2222) show
+/Times-Roman findfont 12 scalefont setfont
+528.48 259.92 moveto (Horiz. Rotate) show
+/Times-Roman findfont 12 scalefont setfont
+540.0 228.24 moveto (Vert. Rotate) show
+/Times-Roman findfont 10 scalefont setfont
+548.9028 34.0632000000001 moveto (Daren Scot Wilson) show
+548.9028 25.0632000000001 moveto (June 8th, 1979) show
+548.9028 16.0632000000001 moveto (redrawn in 2009) show
+/Times-Roman findfont 12 scalefont setfont
+470.88 107.6832 moveto (LPF for L/R) show
+470.88 93.2832000000001 moveto (perspective) show
+470.88 78.8832000000001 moveto (difference) show
+/Times-Roman findfont 10 scalefont setfont
+661.1072 34.0632000000001 moveto (stereo888xy.rb) show
+661.1072 25.0632000000001 moveto (dswschem.rb) show
+661.1072 16.0632000000001 moveto (dswschem.ps) show
+
+
+showpage
