@@ -33,15 +33,14 @@ Then follows three [x,y] points.  These are places where the B, E, C leads join.
     
 Here's a longer chunk of typical RubySchem code:
 
-
-   sch.line x21, [y,y20]
-   sch.line x23, [y,y20]
-   sch.resistor ["R18", "82k"], "V", [x21, xmid],  y
-   sch.resistor ["    R19", "    24k"],  "V", [xmid, x23],  y
-   ycapbot = y32-0.7*partsp
-   sch.cap ["", "", "C5", "10u"], ">", xmid, [y,ycapbot]
-   sch.gnd [xmid, ycapbot], [xmid,ycapbot]
-   sch.dot x21, y20
+    sch.line x21, [y,y20]
+    sch.line x23, [y,y20]
+    sch.resistor ["R18", "82k"], "V", [x21, xmid],  y
+    sch.resistor ["    R19", "    24k"],  "V", [xmid, x23],  y
+    ycapbot = y32-0.7*partsp
+    sch.cap ["", "", "C5", "10u"], ">", xmid, [y,ycapbot]
+    sch.gnd [xmid, ycapbot], [xmid,ycapbot]
+    sch.dot x21, y20
 
 
 You will use a lot of Schematic.line, Schematic.dot, and Schematic.gnd.   Line are, of course, lines. Duh, obvious.  You give it two x coords in a list and one bare y coord, or one bare x and a list of two y coords.
