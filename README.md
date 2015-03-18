@@ -33,18 +33,20 @@ Then follows three [x,y] points.  These are places where the B, E, C leads join.
     
 Here's a longer chunk of typical RubySchem code:
 
-'''
-sch.line x21, [y,y20]
-sch.line x23, [y,y20]
-sch.resistor ["R18", "82k"], "V", [x21, xmid],  y
-sch.resistor ["    R19", "    24k"],  "V", [xmid, x23],  y
-ycapbot = y32-0.7*partsp
-sch.cap ["", "", "C5", "10u"], ">", xmid, [y,ycapbot]
-sch.gnd [xmid, ycapbot], [xmid,ycapbot]
-sch.dot x21, y20
-'''
+
+   sch.line x21, [y,y20]
+   sch.line x23, [y,y20]
+   sch.resistor ["R18", "82k"], "V", [x21, xmid],  y
+   sch.resistor ["    R19", "    24k"],  "V", [xmid, x23],  y
+   ycapbot = y32-0.7*partsp
+   sch.cap ["", "", "C5", "10u"], ">", xmid, [y,ycapbot]
+   sch.gnd [xmid, ycapbot], [xmid,ycapbot]
+   sch.dot x21, y20
+
 
 You will use a lot of Schematic.line, Schematic.dot, and Schematic.gnd.   Line are, of course, lines. Duh, obvious.  You give it two x coords in a list and one bare y coord, or one bare x and a list of two y coords.
+
+What are all those "x21" and "y20"?  Coordinates for the wiring and other major components.
 
 Resistors, Capacitors, Diodes etc. all work that way.  One of x or y is a list of two values, and the other a bare number.   Can RubySchem draw parts at angles, for example along a 45 degree diagonal?  I don't recall.  That would be useful for full wave rectifiers and ring modulators.
 
@@ -53,7 +55,7 @@ A "dot" puts a fat dot where a horizontal and a vertical line cross. Well, you c
 Where there's no dot applied to crossing lines, you have one line passing over the other, automatically.  Really, every line has a wide white carpet under it.  The line passing over paints white over part of the line underneath, making the under-passing line look like it has a gap.  This fails miserably if you'll be printing your schematic on colored paper. Oh well.
 
 ![small section of schematic showing dotted connect, gap for crossover](dotgap.png)
-What are all those "x21" and "y20"?  Coordinates for the wiring and other major components.
+
 
 A resistor is given two x values and one y, if it is horizontal, or one x value and two y, if it goes vertically.   These x,y coordinates are typically for points anywhere along the line representing electrical connection to other parts.  You don't need to think about exactly where the resistor goes.  It'll usualy appear midway between the two [x,y] points you give.
 
