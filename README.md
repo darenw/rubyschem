@@ -55,23 +55,22 @@ Where there's no dot applied to crossing lines, you have one line passing over t
 
 ![small section of schematic showing dotted connect, gap for crossover](dotgap.png)
 
-
 A resistor is given two x values and one y, if it is horizontal, or one x value and two y, if it goes vertically.   These x,y coordinates are typically for points anywhere along the line representing electrical connection to other parts.  You don't need to think about exactly where the resistor goes.  It'll usualy appear midway between the two [x,y] points you give.
 
 The dswschem.rb file defines handy units:  inch, cm, minsp (smallest spacing between parallel wiring lines) and some others.   Note that good proper Ruby code would have $inch, $minsp etc. but I've defined functions with non-dollared names to make writing schematic layouts easier.
 
 It's best to start from the left and work right for x coords, or bottom and work up for y.  The first is set to something like an inch for a margin.  The next x2 is x1 plus something - the spacing between parts or lines, usually. Schematic provides minsp, bunch(), and tween() to make your life easier.  Here's a snip from the Stereo888 example's file:
-'''
-x1 =  0.7*inch
-x2,x3,x4 = bunch(3, x1 + partsp, minsp*1.25)
-x5 = x4+minsp
-x9 = x5+partsp*1.45
-x6,x7,x8 = tween(3, x5, x9, 0.5*minsp)
-xleds123=bunch(3, x9+0.2*inch, 1.3*minsp)
-xleds456=bunch(3, xleds123.last+0.24*inch, 1.27*minsp)
-xleds789=bunch(3, xleds456.last+0.24*inch, 1.27*minsp)
-x11 = xleds789.last + minsp*0.7
-'''
+
+    x1 =  0.7*inch
+    x2,x3,x4 = bunch(3, x1 + partsp, minsp*1.25)
+    x5 = x4+minsp
+    x9 = x5+partsp*1.45
+    x6,x7,x8 = tween(3, x5, x9, 0.5*minsp)
+    xleds123=bunch(3, x9+0.2*inch, 1.3*minsp)
+    xleds456=bunch(3, xleds123.last+0.24*inch, 1.27*minsp)
+    xleds789=bunch(3, xleds456.last+0.24*inch, 1.27*minsp)
+    x11 = xleds789.last + minsp*0.7
+
 
 
 ##How to Use This in Detail
@@ -84,11 +83,11 @@ Draw a rough schematic by hand.  Okay to be sloppy, crooked.   Draw vertcial and
 (I'd post an image here but will need some time to find it. Pester me, remind me!)
 
 Start a text editor to make a file named __projectname__.rb in which you will describe your schematic.   You need only a couple lines of prelude before getting into the good stuff:
-'''
-#!/usr/bin/env  ruby  
-# Foobar project schematic using RubySchem
-require 'dswschem'  
-'''
+
+    #!/usr/bin/env  ruby  
+    # Foobar project schematic using RubySchem
+    require 'dswschem'  
+
 
 Write a long series of variable assignments for all the x coordinates, then for all the y.
 Go prowl around in the examples/ directory for examples.
@@ -101,10 +100,9 @@ At then end of your Ruby script, put
 
     sch.done
     
-Execute your script.  Unless I forgot something, and I probably did, you should quickly have a new .ps file in your current directory.   
+Execute your script.  You may need to fuss with PATH, make symlinks or copy the dswschem files into your project's directory, or do other hocus pocus.  (It's been a while since I've used this myself!)   Unless I forgot something, and I probably did, you should quickly have a new .ps file in your current directory.   
 
 Use ps2pdf to create a PDF, Ghostscript, GIMP or whatever to read the .ps or .pdf to rasterize and save as a .png, .jpg, or other image format.
-
 
 
 ##Cautions, Problems, Bugs, Idiocies and Sources of Frustrations
