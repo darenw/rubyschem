@@ -119,7 +119,7 @@ So I started writing, by hand, a Postscript file.  I defined ways to draw resist
 
 After gathering up standard common PS code such as for drawing parts into a separate file, and looking at what I had left, which wasn't pretty, I thought of ways to make it simpler, easier to use.   After some fumbled attempt in Python, I found Ruby to provide a nice way of doing things.   So I wrote a Schematic object which could be told to draw things and where, and then produce a project-specific Postscript incorporating the predefined PS drawing code.   This was all done in, I think, 1997 or 1998.
 
-The first non-trivial project I drew a schematic for was the [Perfect Sine Wave Generator](http://www.darenscotwilson.com/spec/sine/sine.html)   Later, I made a schematic using RubySchem when writing a web page about my experimental ![Stereoscopic 3D Display](http://www.darenscotwilson.com/spec/stereo888/stereo888.html) in 2009, a good couple decades after the project itself.
+The first non-trivial project I drew a schematic for was the [Perfect Sine Wave Generator](http://www.darenscotwilson.com/spec/sine/sine.html)   Later, I made a schematic using RubySchem when writing a web page about my experimental  [Stereoscopic 3D Display](http://www.darenscotwilson.com/spec/stereo888/stereo888.html) in 2009, a good couple decades after the project itself.
 
 
 ##Contact
